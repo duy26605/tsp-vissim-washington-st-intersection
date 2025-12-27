@@ -107,7 +107,4 @@ The study compares a **base actuated signal control** with two TSP alternatives 
   - Green extension
   - Phase rotation behavior
 
----
-
-## 📁 Repository Structure
 
