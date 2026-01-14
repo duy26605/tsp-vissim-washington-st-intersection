@@ -1,0 +1,497 @@
+PROGRAM actuated_8PHASES;
+/* Actuated 8-phase NEMA dual-ring (base structure preserved)
+   Adds:
+   (1) TSP green extension on phases 4 & 8 only
+   (2) Phase rotation (lead -> lag) when barrier 1 releases:
+       ring1: 4 then 3 (barrier ends on 3)
+       ring2: 8 then 7 (barrier ends on 7)
+*/
+
+VAP_Frequency 10;
+
+/************************************************************/
+/* CONSTANTS */
+CONST
+CALLDELAY  = 2,
+BUS_WINDOW = 10,     /* seconds before MAXGREEN when extension may apply */
+BUS_EXT    = 10;     /* max extension seconds beyond MAXGREEN */
+
+/************************************************************/
+/* ARRAYS */
+ARRAY
+MAXGREEN[8] = [12, 26, 8, 32, 10, 26, 8, 30],
+MINGAP10[8] = [30, 30, 30, 30, 30, 30, 30, 30],
+RECALL[8]   = [0,0,0,1,0,0,0,1],
+
+has_call[8],
+no_conflict[8],
+confl_call[8],
+imminent[8],
+early_green[8],
+ext_green[8],
+rest_green[8],
+
+/* bus latch + window */
+bus_active[8],
+bus_window_ok[8],
+
+/* rotation flags (use size 1 arrays to avoid “variable” errors) */
+rotate34[1],
+rotate78[1];
+
+/************************************************************/
+/* SUBROUTINES */
+
+/* ---------- Locking Call ---------- */
+SUBROUTINE Locking_call;
+IF Current_state(i, red) THEN
+   IF (RECALL[i] OR (Occupancy(dk) > CALLDELAY)) THEN
+      has_call[i] := 1;
+   END;
+END.
+
+/* ---------- Non-Locking Call ---------- */
+SUBROUTINE NONLocking_call;
+IF Current_state(i, red) THEN
+   IF (RECALL[i] OR (Occupancy(dk) > CALLDELAY)) THEN
+      has_call[i] := 1;
+   ELSE
+      has_call[i] := 0;
+   END;
+END.
+
+/* ---------- Initialize Early Green ---------- */
+SUBROUTINE Initialize_early_green;
+IF Current_state(i, green) THEN
+   early_green[i] := 1;
+END.
+
+/* ---------- Base Imminent-to-Rest ---------- */
+SUBROUTINE Imminent_to_rest;
+IF (imminent[i] AND no_conflict[i]) THEN
+   Sg_green(i);
+   early_green[i] := 1;
+   imminent[i] := 0;
+   has_call[i] := 0;
+END;
+
+IF (early_green[i] AND confl_call[i] AND (T_green(i) >= T_green_min(i))) THEN
+   early_green[i] := 0;
+   ext_green[i] := 1;
+END;
+
+IF (ext_green[i]) THEN
+   IF ((Headway10(dk) > MINGAP10[i]) OR (T_green(i) >= MAXGREEN[i])) THEN
+      ext_green[i] := 0;
+      rest_green[i] := 1;
+   END;
+END.
+
+/* ---------- Phase 4 with LPI + TSP extension ---------- */
+SUBROUTINE Imminent_to_rest_LPI_TSP4;
+
+IF (imminent[i] AND no_conflict[i]) THEN
+   Start(LPI4);
+   IF (LPI4 = 4) THEN
+      Sg_green(i);
+      early_green[i] := 1;
+      imminent[i] := 0;
+      has_call[i] := 0;
+      Stop(LPI4);
+      Reset(LPI4);
+   END;
+END;
+
+IF (early_green[i] AND confl_call[i] AND (T_green(i) >= T_green_min(i))) THEN
+   early_green[i] := 0;
+   ext_green[i] := 1;
+END;
+
+IF (ext_green[i]) THEN
+
+   /* end immediately if bus checks out */
+   IF (Occupancy(44) > 0) THEN
+      ext_green[i] := 0;
+      rest_green[i] := 1;
+   END;
+
+   /* hard cap always */
+   IF (ext_green[i] AND (T_green(i) >= (MAXGREEN[i] + BUS_EXT))) THEN
+      ext_green[i] := 0;
+      rest_green[i] := 1;
+   END;
+
+   /* at MAXGREEN: end unless bus is eligible */
+   IF (ext_green[i] AND (T_green(i) >= MAXGREEN[i])) THEN
+      IF NOT (bus_window_ok[i]) THEN
+         ext_green[i] := 0;
+         rest_green[i] := 1;
+      END;
+   END;
+
+   /* optional gap-out only when no bus active */
+   IF (ext_green[i] AND (bus_active[i] = 0)) THEN
+      IF (Headway10(dk) > MINGAP10[i]) THEN
+         ext_green[i] := 0;
+         rest_green[i] := 1;
+      END;
+   END;
+
+END.
+
+/* ---------- Phase 8 with LPI + TSP extension ---------- */
+SUBROUTINE Imminent_to_rest_LPI_TSP8;
+
+IF (imminent[i] AND no_conflict[i]) THEN
+   Start(LPI8);
+   IF (LPI8 = 4) THEN
+      Sg_green(i);
+      early_green[i] := 1;
+      imminent[i] := 0;
+      has_call[i] := 0;
+      Stop(LPI8);
+      Reset(LPI8);
+   END;
+END;
+
+IF (early_green[i] AND confl_call[i] AND (T_green(i) >= T_green_min(i))) THEN
+   early_green[i] := 0;
+   ext_green[i] := 1;
+END;
+
+IF (ext_green[i]) THEN
+
+   /* end immediately if bus checks out */
+   IF (Occupancy(84) > 0) THEN
+      ext_green[i] := 0;
+      rest_green[i] := 1;
+   END;
+
+   /* hard cap always */
+   IF (ext_green[i] AND (T_green(i) >= (MAXGREEN[i] + BUS_EXT))) THEN
+      ext_green[i] := 0;
+      rest_green[i] := 1;
+   END;
+
+   /* at MAXGREEN: end unless bus is eligible */
+   IF (ext_green[i] AND (T_green(i) >= MAXGREEN[i])) THEN
+      IF NOT (bus_window_ok[i]) THEN
+         ext_green[i] := 0;
+         rest_green[i] := 1;
+      END;
+   END;
+
+   /* optional gap-out only when no bus active */
+   IF (ext_green[i] AND (bus_active[i] = 0)) THEN
+      IF (Headway10(dk) > MINGAP10[i]) THEN
+         ext_green[i] := 0;
+         rest_green[i] := 1;
+      END;
+   END;
+
+END.
+
+
+/************************************************************/
+/* ================= MAIN PROGRAM ========================== */
+
+/* ---- Initialization ---- */
+IF sim_timer = 0 THEN
+   START(sim_timer);
+END;
+
+IF sim_timer <= 5 THEN
+   i := 1; GOSUB Initialize_early_green;
+   i := 2; GOSUB Initialize_early_green;
+   i := 3; GOSUB Initialize_early_green;
+   i := 4; GOSUB Initialize_early_green;
+   i := 5; GOSUB Initialize_early_green;
+   i := 6; GOSUB Initialize_early_green;
+   i := 7; GOSUB Initialize_early_green;
+   i := 8; GOSUB Initialize_early_green;
+
+   rotate34[1] := 0;
+   rotate78[1] := 0;
+   bus_active[4] := 0;
+   bus_active[8] := 0;
+END;
+
+/************************************************************/
+/* ---- A. Update Calls ---- */
+i := 1; dk := 11; GOSUB NONLocking_call;
+i := 2; dk := 21; GOSUB NONLocking_call;
+i := 3; dk := 31; GOSUB NONLocking_call;
+i := 4; dk := 41; GOSUB Locking_call;
+i := 5; dk := 51; GOSUB NONLocking_call;
+i := 6; dk := 61; GOSUB NONLocking_call;
+i := 7; dk := 71; GOSUB NONLocking_call;
+i := 8; dk := 81; GOSUB Locking_call;
+
+/************************************************************/
+/* ---- A1. Bus latch + window (only phases 4 & 8 matter) ---- */
+
+/* SB bus: check-in 43, check-out 44 */
+IF (Occupancy(43) > 0) THEN
+   bus_active[4] := 1;
+END;
+IF (Occupancy(44) > 0) THEN
+   bus_active[4] := 0;
+END;
+
+/* NB bus: check-in 83, check-out 84 */
+IF (Occupancy(83) > 0) THEN
+   bus_active[8] := 1;
+END;
+IF (Occupancy(84) > 0) THEN
+   bus_active[8] := 0;
+END;
+
+/* window eligibility */
+bus_window_ok[1] := 0; bus_window_ok[2] := 0; bus_window_ok[3] := 0;
+bus_window_ok[5] := 0; bus_window_ok[6] := 0; bus_window_ok[7] := 0;
+
+bus_window_ok[4] := (bus_active[4] = 1) * ((MAXGREEN[4] - T_green(4)) <= BUS_WINDOW);
+bus_window_ok[8] := (bus_active[8] = 1) * ((MAXGREEN[8] - T_green(8)) <= BUS_WINDOW);
+
+/************************************************************/
+/* ---- B. Conflict-Status Logic (KEEP BASE EXACTLY) ---- */
+no_conflict[1] :=
+    Current_state(2, red)*Current_state(3, red)*
+    Current_state(4, red)*Current_state(7, red)*
+    Current_state(8, red)*(Remaining_Intergreen(1)=0);
+
+no_conflict[2] :=
+    Current_state(1, red)*Current_state(3, red)*
+    Current_state(4, red)*Current_state(7, red)*
+    Current_state(8, red)*(Remaining_Intergreen(2)=0);
+
+no_conflict[3] :=
+    Current_state(1, red)*Current_state(2, red)*
+    Current_state(4, red)*Current_state(5, red)*
+    Current_state(6, red)*(Remaining_Intergreen(3)=0);
+
+no_conflict[4] :=
+    Current_state(1, red)*Current_state(2, red)*
+    Current_state(3, red)*Current_state(5, red)*
+    Current_state(6, red)*(Remaining_Intergreen(4)=0);
+
+no_conflict[5] :=
+    Current_state(6, red)*Current_state(7, red)*
+    Current_state(8, red)*Current_state(3, red)*
+    Current_state(4, red)*(Remaining_Intergreen(5)=0);
+
+no_conflict[6] :=
+    Current_state(5, red)*Current_state(7, red)*
+    Current_state(8, red)*Current_state(3, red)*
+    Current_state(4, red)*(Remaining_Intergreen(6)=0);
+
+no_conflict[7] :=
+    Current_state(5, red)*Current_state(6, red)*
+    Current_state(8, red)*Current_state(1, red)*
+    Current_state(2, red)*(Remaining_Intergreen(7)=0);
+
+no_conflict[8] :=
+    Current_state(5, red)*Current_state(6, red)*
+    Current_state(7, red)*Current_state(1, red)*
+    Current_state(2, red)*(Remaining_Intergreen(8)=0);
+
+/************************************************************/
+/* ---- C. Conflicting Calls (KEEP BASE EXACTLY) ---- */
+confl_call[1] := has_call[2] OR has_call[3] OR has_call[4] OR has_call[7] OR has_call[8];
+confl_call[2] := has_call[1] OR has_call[3] OR has_call[4] OR has_call[7] OR has_call[8];
+confl_call[3] := has_call[1] OR has_call[2] OR has_call[4] OR has_call[5] OR has_call[6];
+confl_call[4] := has_call[1] OR has_call[2] OR has_call[3] OR has_call[5] OR has_call[6];
+confl_call[5] := has_call[3] OR has_call[4] OR has_call[6] OR has_call[7] OR has_call[8];
+confl_call[6] := has_call[3] OR has_call[4] OR has_call[5] OR has_call[7] OR has_call[8];
+confl_call[7] := has_call[1] OR has_call[2] OR has_call[5] OR has_call[6] OR has_call[8];
+confl_call[8] := has_call[1] OR has_call[2] OR has_call[5] OR has_call[6] OR has_call[7];
+
+/************************************************************/
+/* ---- D. Phase Transition Evaluation ---- */
+i := 1; dk := 12; GOSUB Imminent_to_rest;
+i := 2; dk := 22; GOSUB Imminent_to_rest;
+i := 3; dk := 32; GOSUB Imminent_to_rest;
+
+i := 4; dk := 42; GOSUB Imminent_to_rest_LPI_TSP4;
+
+i := 5; dk := 52; GOSUB Imminent_to_rest;
+i := 6; dk := 62; GOSUB Imminent_to_rest;
+i := 7; dk := 72; GOSUB Imminent_to_rest;
+
+i := 8; dk := 82; GOSUB Imminent_to_rest_LPI_TSP8;
+
+/************************************************************/
+/* ---- OPTIONAL: Dummy signals (safe nested IF style) ---- */
+
+/* SG 9: any check-in hit */
+IF (Occupancy(43) > 0) THEN
+   Sg_green(9);
+ELSE
+   IF (Occupancy(83) > 0) THEN
+      Sg_green(9);
+   ELSE
+      Sg_red(9);
+   END;
+END;
+
+/* SG10: bus active */
+IF (bus_active[4] = 1) THEN
+   Sg_green(10);
+ELSE
+   IF (bus_active[8] = 1) THEN
+      Sg_green(10);
+   ELSE
+      Sg_red(10);
+   END;
+END;
+
+/* SG11: window eligible */
+IF (bus_window_ok[4] = 1) THEN
+   Sg_green(11);
+ELSE
+   IF (bus_window_ok[8] = 1) THEN
+      Sg_green(11);
+   ELSE
+      Sg_red(11);
+   END;
+END;
+
+/* SG12: check-out hit */
+IF (Occupancy(44) > 0) THEN
+   Sg_green(12);
+ELSE
+   IF (Occupancy(84) > 0) THEN
+      Sg_green(12);
+   ELSE
+      Sg_red(12);
+   END;
+END;
+
+/************************************************************/
+/* ---- E. Phase Sequencing and Barrier Logic ---- */
+
+/* within-ring transitions that are ALWAYS allowed */
+IF rest_green[1] THEN
+   rest_green[1] := 0;
+   Sg_red(1);
+   imminent[2] := 1;
+END;
+
+IF rest_green[5] THEN
+   rest_green[5] := 0;
+   Sg_red(5);
+   imminent[6] := 1;
+END;
+
+/* lead-left transitions only if NOT rotated */
+IF rest_green[3] THEN
+   IF (rotate34[1] = 0) THEN
+      rest_green[3] := 0;
+      Sg_red(3);
+      imminent[4] := 1;
+   END;
+END;
+
+IF rest_green[7] THEN
+   IF (rotate78[1] = 0) THEN
+      rest_green[7] := 0;
+      Sg_red(7);
+      imminent[8] := 1;
+   END;
+END;
+
+/* rotated lag-left transitions */
+IF rest_green[4] THEN
+   IF (rotate34[1] = 1) THEN
+      rest_green[4] := 0;
+      Sg_red(4);
+      imminent[3] := 1;
+   END;
+END;
+
+IF rest_green[8] THEN
+   IF (rotate78[1] = 1) THEN
+      rest_green[8] := 0;
+      Sg_red(8);
+      imminent[7] := 1;
+   END;
+END;
+
+/* ---- Barrier 1: between 2 & 6 ---- */
+IF (rest_green[2] AND rest_green[6]) THEN
+   rest_green[2] := 0;
+   rest_green[6] := 0;
+   Sg_red(2);
+   Sg_red(6);
+
+   /* decide rotation ONCE at barrier release */
+   rotate34[1] := (bus_active[4] = 1) * (has_call[3] = 1);
+   rotate78[1] := (bus_active[8] = 1) * (has_call[7] = 1);
+
+   /* ring1 start */
+   IF (rotate34[1] = 1) THEN
+      imminent[4] := 1;
+   ELSE
+      IF has_call[3] THEN
+         imminent[3] := 1;
+      ELSE
+         imminent[4] := 1;
+      END;
+   END;
+
+   /* ring2 start */
+   IF (rotate78[1] = 1) THEN
+      imminent[8] := 1;
+   ELSE
+      IF has_call[7] THEN
+         imminent[7] := 1;
+      ELSE
+         imminent[8] := 1;
+      END;
+   END;
+
+END;
+
+/* ---- Barrier 2: dynamic barrier end ---- */
+IF ( ((rotate34[1] = 1) AND rest_green[3]) OR ((rotate34[1] = 0) AND rest_green[4]) ) THEN
+   IF ( ((rotate78[1] = 1) AND rest_green[7]) OR ((rotate78[1] = 0) AND rest_green[8]) ) THEN
+
+      /* clear barrier-ending phases */
+      IF (rotate34[1] = 1) THEN
+         rest_green[3] := 0;
+         Sg_red(3);
+      ELSE
+         rest_green[4] := 0;
+         Sg_red(4);
+      END;
+
+      IF (rotate78[1] = 1) THEN
+         rest_green[7] := 0;
+         Sg_red(7);
+      ELSE
+         rest_green[8] := 0;
+         Sg_red(8);
+      END;
+
+      /* reset rotation */
+      rotate34[1] := 0;
+      rotate78[1] := 0;
+
+      /* next starts (same as base) */
+      IF has_call[1] THEN
+         imminent[1] := 1;
+      ELSE
+         imminent[2] := 1;
+      END;
+
+      IF has_call[5] THEN
+         imminent[5] := 1;
+      ELSE
+         imminent[6] := 1;
+      END;
+
+   END;
+END.
+
+/************************************************************/
+END.
