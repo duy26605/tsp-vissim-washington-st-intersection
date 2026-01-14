@@ -1,0 +1,58 @@
+$SIGNAL_GROUPS
+VAP     VISSIM
+$
+K1           1
+K2           2
+K3           3
+K4           4
+K5           5
+K6           6
+K7           7
+K8           8
+K9           9
+K10          10
+K11          11
+K12          12
+
+$IGM
+Intergreen matrix. (Note: in a PUA file, anything between the keyword (in this case,
+IGM) and the following $ is considered a comment.) IGM is a way to get red clearance 
+to be displayed. Intergreen from i to j should equal i's (yellow + red clearance), if i 
+and j are in conflict. If there is no conflict, use -127. Must be integer.
+$
+	K1	K2	K3	K4	K5	K6	K7	K8	K9	K10	K11	K12
+K1 	-127	6	6	6	-127	-127	6	6	-127	-127	-127	-127
+K2	5	-127	5	5	-127	-127	5	5	-127	-127	-127	-127
+K3	5	5	-127	5	5	5	-127	-127	-127	-127	-127	-127
+K4	5	5	5	-127	5	5	-127	-127	-127	-127	-127	-127
+K5 	-127	-127	6	6	-127	6	6	6	-127	-127	-127	-127
+K6	-127	-127	6	6	6	-127	6	6	-127	-127	-127	-127
+K7	5	5	-127	-127	5	5	-127	5	-127	-127	-127	-127
+K8	5	5	-127	-127	5	5	5	-127	-127	-127	-127	-127
+K9	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127
+K10	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127
+K11	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127
+K12	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127	-127
+
+
+
+$STAGES
+$
+Stage_1      K1 
+Stage_2      K2
+Stage_3      K3
+Stage_4      K4
+Stage_5      K5
+Stage_6      K6
+Stage_7      K7
+Stage_8      K8
+Stage_9      K9
+Stage_10     K10
+Stage_11     K11
+Stage_12     K12
+
+$STARTING_STAGE
+$ 
+Stage_2
+Stage_6
+$END
